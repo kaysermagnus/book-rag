@@ -96,6 +96,31 @@ book-rag-mcp   # stdio server; wire it into your agent's MCP client config
 
 The server inherits the CLI's contracts: verbatim chunks with provenance, graceful degradation to keyword-only when Ollama is down (`mode: "keyword-fallback"`), and the citation obligation (the agent answers only from retrieved chunks). Index building is deliberately not exposed — see ADR-0002.
 
+### Phase 5: Running in Docker
+
+The repo ships a minimal multi-stage image (slim Python + the built venv, no compiler; ~260 MB):
+
+```bash
+docker build -t book-rag .   # or: docker compose up --build
+```
+
+**MCP server (the image's default command):** serves streamable-http on port 8080; books and `.rag` indexes live in the `/data` volume, so they survive container recreation:
+
+```bash
+docker run -d -p 8080:8080 -v $PWD/data:/data \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 book-rag
+```
+
+**One-shot CLI use:** override the command, e.g. to index a book:
+
+```bash
+docker run --rm -v $PWD/data:/data \
+  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  book-rag index /data/MyBook.epub
+```
+
+`OLLAMA_BASE_URL` points at wherever Ollama runs: `host.docker.internal` for the host's daemon (on Linux add `--add-host=host.docker.internal:host-gateway`), or a sibling container's service name when Ollama runs in its own container. `docker-compose.yml` wires all of this up, including the optional sibling Ollama service.
+
 ---
 *This README is intentionally dense to serve as both a user guide and an architectural specification document.*
 

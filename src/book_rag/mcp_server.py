@@ -1,6 +1,8 @@
-"""MCP server exposing book-rag retrieval to external agents (stdio).
+"""MCP server exposing book-rag retrieval to external agents.
 
-    uv run --extra mcp book-rag-mcp
+    uv run --extra mcp book-rag-mcp                          # stdio (default)
+    uv run --extra mcp book-rag-mcp --transport http \
+        --host 0.0.0.0 --port 8080                          # streamable-http
 
 Two read-only tools (ADR 0002):
     list_indexes(directory=".")   -> discover available book indexes
@@ -14,6 +16,7 @@ obligation (answer only from retrieved chunks, and cite them).
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 # Optional extra (`uv sync --extra mcp`); unresolvable where the extra is absent.
@@ -81,8 +84,29 @@ def query_book(index: str, question: str, top_k: int = 5) -> dict:
     }
 
 
-def main() -> None:
-    mcp.run(transport="stdio")
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="book-rag-mcp",
+        description="MCP server exposing book-rag retrieval to agents.",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=("stdio", "http"),
+        default="stdio",
+        help="stdio for in-process agents; http serves streamable-http (default: stdio)",
+    )
+    parser.add_argument("--host", help="bind address for http transport (default 127.0.0.1)")
+    parser.add_argument("--port", type=int, help="port for http transport (default 8000)")
+    args = parser.parse_args(argv)
+
+    if args.transport == "http":
+        if args.host is not None:
+            mcp.settings.host = args.host
+        if args.port is not None:
+            mcp.settings.port = args.port
+        mcp.run(transport="streamable-http")
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

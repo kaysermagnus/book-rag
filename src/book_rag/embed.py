@@ -8,6 +8,7 @@ fake; the CLI uses Ollama (``nomic-embed-text``, 768 dims, local).
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from typing import Protocol
@@ -33,12 +34,16 @@ class OllamaEmbedder:
 
     def __init__(
         self,
-        model: str = DEFAULT_MODEL,
-        base_url: str = DEFAULT_BASE_URL,
+        model: str | None = None,
+        base_url: str | None = None,
         dim: int = 768,
     ) -> None:
-        self.model = model
-        self.base_url = base_url.rstrip("/")
+        # Env vars let containers point at a host or sibling-container Ollama
+        # (e.g. OLLAMA_BASE_URL=http://host.docker.internal:11434); explicit
+        # constructor args still win.
+        self.model = model or os.environ.get("OLLAMA_MODEL", DEFAULT_MODEL)
+        env_base_url = os.environ.get("OLLAMA_BASE_URL", DEFAULT_BASE_URL)
+        self.base_url = (base_url or env_base_url).rstrip("/")
         self.dim = dim
 
     def ensure_ready(self) -> None:

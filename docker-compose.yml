@@ -1,0 +1,24 @@
+services:
+  book-rag:
+    build: .
+    ports:
+      - "8080:8080" # MCP streamable-http endpoint -> http://localhost:8080/mcp
+    volumes:
+      # books + .rag indexes persist here (SQLite lives in the volume)
+      - ./data:/data
+    environment:
+      OLLAMA_BASE_URL: http://host.docker.internal:11434 # host's Ollama
+    extra_hosts:
+      # needed on Linux; already defined on Docker Desktop
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  # Alternative to the host's Ollama: run it as a sibling container on this
+  # network, then set OLLAMA_BASE_URL to http://ollama:11434 above.
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+
+# volumes:
+#   ollama-data:
