@@ -9,8 +9,12 @@ dependencies = [
     "charset-normalizer",
 ]
 
+[project.optional-dependencies]
+mcp = ["mcp>=1.9,<2"]  # 1.x line: stable FastMCP API (2.0 restructured the SDK)
+
 [project.scripts]
 book-rag = "book_rag.cli:main"
+book-rag-mcp = "book_rag.mcp_server:main"
 
 [dependency-groups]
 dev = [

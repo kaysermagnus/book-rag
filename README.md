@@ -38,7 +38,7 @@ This phase covers setting up the isolated environment required to run `book-rag`
 4. **Install Dependencies:** Install all required packages listed in the dependency file:
 
    ```bash
-   uv sync
+   uv sync --extra mcp   # plain `uv sync` also works; the extra is only needed for the MCP server (Phase 4)
    ```
 
 ### Phase 1: Prerequisites Check (One-Time Setup)
@@ -81,6 +81,21 @@ book-rag query <index_file> "<your question>"
 * **Missing Index File:** If you run `book-rag query` but the `<index_file>` does not exist, the tool cannot proceed. You must complete Phase 2 first.
 * **Retrieval Failure:** If the query runs but returns no context, it means the passages matching your question were not found in the index. Try rephrasing your question or checking if the original book file was indexed correctly.
 
+### Phase 4: Agent Integration via MCP
+
+Instead of having an agent shell out to `book-rag query` (parsing stdout, handling exit codes), run the bundled MCP server. It exposes retrieval as two structured, read-only tools over stdio:
+
+* `list_indexes(directory)` — discover available `.rag` indexes with title/author.
+* `query_book(index, question, top_k)` — the same hybrid retrieval as Phase 3, returned as structured JSON.
+
+**Run it:**
+
+```bash
+book-rag-mcp   # stdio server; wire it into your agent's MCP client config
+```
+
+The server inherits the CLI's contracts: verbatim chunks with provenance, graceful degradation to keyword-only when Ollama is down (`mode: "keyword-fallback"`), and the citation obligation (the agent answers only from retrieved chunks). Index building is deliberately not exposed — see ADR-0002.
+
 ---
 *This README is intentionally dense to serve as both a user guide and an architectural specification document.*
 
@@ -92,6 +107,11 @@ This section details the architectural choices made to meet specific constraints
 
 * **Retrieval-Only Mandate:** `book-rag` is strictly a retrieval system. It never invokes a generative LLM. The responsibility for synthesis, summarization, and answer generation lies with the downstream querying agent.
 * **Data Locality:** All processing is designed to be local and private, relying on local embedding models (Ollama) rather than external API services.
+
+### Agent Interface (ADR-0002)
+
+* **MCP Server:** A local stdio MCP server (`book-rag-mcp`, optional `mcp` extra) exposes retrieval to external agents as two read-only tools — `list_indexes` and `query_book`. Raw CLI access is fragile for agents (exact syntax, stdout parsing, exit codes); the MCP layer gives a structured, deterministic contract.
+* **Read-Only Phase 1:** Index building is a write operation and is not exposed; adding it requires an explicit decision.
 
 ### Indexing & Storage
 
