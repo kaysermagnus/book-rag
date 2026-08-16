@@ -6,3 +6,9 @@ __pycache__/
 
 # Index artifacts are disposable — never commit them
 *.rag
+
+# Docker data
+data/
+
+# MacOS
+.DS_Store
