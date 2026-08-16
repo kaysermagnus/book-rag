@@ -18,43 +18,71 @@
 * **Hybrid Retrieval:** Combines vector similarity search (KNN) with keyword matching (FTS5/BM25), fused using Reciprocal Rank Fusion ($\text{RRF}_{K=60}$) for optimal recall.
 * **Efficiency:** Indexes are single-file SQLite databases (`<stem>.rag`), making management and recovery straightforward.
 
-## 🚀 Getting Started
+### Phase 0: Installation & Setup (One-Time)
 
-### Prerequisites
+This phase covers setting up the isolated environment required to run `book-rag`. This should be done once per machine/project clone.
 
-Before running commands, ensure you have the following installed and configured:
+1. **Clone Repository:** Clone the `book-rag` repository to your local machine.
+2. **Create Virtual Environment:** Navigate into the project root and run:
 
-1. **Python:** The runtime environment for `book-rag`.
-2. **Ollama:** Running locally with the required model (`nomic-embed-text`) to generate embeddings.
-3. **Dependencies:** Install the Python package dependencies required by `book-rag`.
+   ```bash
+   uv venv
+   ```
 
-### Usage Guide (CLI)
+3. **Activate Environment:** Activate the newly created virtual environment:
 
-All operations are performed via the command line. Output is directed to `stdout` by default (JSON format). Use `--text` flag for human-readable output, and monitor `stderr` for progress/warnings.
+   ```bash
+   source .venv/bin/activate
+   ```
 
-#### 1. Indexing a Book (Build the Knowledge Base)
+4. **Install Dependencies:** Install all required packages listed in the dependency file:
 
-This command processes your source file and builds the searchable `.rag` index.
+   ```bash
+   uv sync
+   ```
+
+### Phase 1: Prerequisites Check (One-Time Setup)
+
+Before running any commands, ensure the following are operational on your machine:
+
+1. **Python:** Ensure Python is installed and you have installed the `book-rag` package dependencies.
+2. **Ollama:** Ensure Ollama is running locally and has pulled the required embedding model (`nomic-embed-text`). This handles all vectorization.
+
+### Phase 2: Indexing (The Build Phase)
+
+This step processes your source material into a searchable, local index file (`.rag`). This is the *only* time you need to point to the original book file.
+
+**Command:**
 
 ```bash
-# Index a book using its original file path
-book-rag index /path/to/my_masterpiece.epub
-
-# Index a book and output human-readable progress to stderr
-book-rag index /path/to/my_masterpiece.epub --text
+book-rag index <source_file>
 ```
 
-#### 2. Querying the Index (Retrieve Context)
+*Example:* `book-rag index MyBook.epub`
 
-This command searches the pre-built index and outputs the most relevant chunks.
+**What this does:** The tool reads `<source_file>`, chunks it into contextually relevant passages, generates embeddings using Ollama, and compiles everything into a local SQLite index file named `<stem>.rag` (e.g., `MyBook.rag`).
+
+### Phase 3: Querying (The Run Phase)
+
+Once you have the `.rag` file, you use it to ask questions. The tool retrieves the most relevant passages from the index for your agent to read.
+
+**Command:**
 
 ```bash
-# Query the index for context on a specific topic
-book-rag query my_masterpiece.rag "What is the role of the protagonist in Act II?"
-
-# Query and receive human-readable context chunks
-book-rag query my_masterpiece.rag "main theme" --text
+book-rag query <index_file> "<your question>"
 ```
+
+*Example:* `book-rag query MyBook.rag "What is the main theme of the novel?"`
+
+**Output:** The command outputs the retrieved, contextually relevant passages to standard output (`stdout`). Use the `--text` flag if you want a human-readable summary of those passages printed to standard error (`stderr`) during testing.
+
+### 🛑 Error Handling & Troubleshooting
+
+* **Missing Index File:** If you run `book-rag query` but the `<index_file>` does not exist, the tool cannot proceed. You must complete Phase 2 first.
+* **Retrieval Failure:** If the query runs but returns no context, it means the passages matching your question were not found in the index. Try rephrasing your question or checking if the original book file was indexed correctly.
+
+---
+*This README is intentionally dense to serve as both a user guide and an architectural specification document.*
 
 ## 🔬 Technical Deep Dive & ADRs (Advanced Users)
 
