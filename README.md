@@ -98,28 +98,26 @@ The server inherits the CLI's contracts: verbatim chunks with provenance, gracef
 
 ### Phase 5: Running in Docker
 
-The repo ships a minimal multi-stage image (slim Python + the built venv, no compiler; ~260 MB):
+The repo ships a self-contained multi-stage image: slim Python + the built venv + a CPU-only Ollama binary (CUDA/Vulkan runners stripped for a minimal footprint; ~360 MB). The `nomic-embed-text` model is pulled into a volume on first run, so subsequent starts are offline and fast.
 
 ```bash
 docker build -t book-rag .   # or: docker compose up --build
 ```
 
-**MCP server (the image's default command):** serves streamable-http on port 8080; books and `.rag` indexes live in the `/data` volume, so they survive container recreation:
+**MCP server (the image's default command):** the entrypoint starts Ollama, ensures `nomic-embed-text` is present, then serves streamable-http on port 8080. Books/`.rag` indexes live in `/data`, pulled Ollama models in `/ollama` — both survive container recreation:
 
 ```bash
-docker run -d -p 8080:8080 -v $PWD/data:/data \
-  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 book-rag
+docker run -d -p 8080:8080 -v $PWD/data:/data -v ollama-models:/ollama book-rag
 ```
 
 **One-shot CLI use:** override the command, e.g. to index a book:
 
 ```bash
-docker run --rm -v $PWD/data:/data \
-  -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+docker run --rm -v $PWD/data:/data -v ollama-models:/ollama \
   book-rag index /data/MyBook.epub
 ```
 
-`OLLAMA_BASE_URL` points at wherever Ollama runs: `host.docker.internal` for the host's daemon (on Linux add `--add-host=host.docker.internal:host-gateway`), or a sibling container's service name when Ollama runs in its own container. `docker-compose.yml` wires all of this up, including the optional sibling Ollama service.
+The image is self-contained — no host Ollama needed. To use a different embedding model, set `OLLAMA_MODEL=<name>`. To point at an external Ollama instead of the bundled one, override `OLLAMA_BASE_URL` (e.g. `http://host.docker.internal:11434`; on Linux add `--add-host=host.docker.internal:host-gateway`). `docker-compose.yml` wires up both volumes by default.
 
 ---
 *This README is intentionally dense to serve as both a user guide and an architectural specification document.*
