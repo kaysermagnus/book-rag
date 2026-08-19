@@ -78,7 +78,13 @@ def query_book(index: str, question: str, top_k: int = 5) -> dict:
         "book": output.book,
         "mode": output.mode,
         "results": [
-            {"rank": r.rank, "score": round(r.score, 4), "path": r.path, "text": r.text}
+            {
+                "rank": r.rank,
+                "score": round(r.score, 4),
+                "path": r.path,
+                "page": r.page,
+                "text": r.text,
+            }
             for r in output.results
         ],
     }

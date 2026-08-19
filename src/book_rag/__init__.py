@@ -18,6 +18,7 @@ from .chunk import chunk_sections
 from .embed import Embedder, EmbedderError, OllamaEmbedder
 from .epub import parse as _parse_epub
 from .models import BookError, CorruptIndexError, QueryOutput, Result
+from .pdf import parse as _parse_pdf
 from .retrieve import fuse
 from .store import create_index, open_index, read_meta, search_keyword, search_vector, write_index
 from .txt import parse as _parse_txt
@@ -38,7 +39,7 @@ MIN_TEXT_CHARS = 100
 # Embed in batches: fewer HTTP round-trips, and progress stays visible.
 _EMBED_BATCH = 32
 
-_PARSERS = {".epub": _parse_epub, ".txt": _parse_txt}
+_PARSERS = {".epub": _parse_epub, ".txt": _parse_txt, ".pdf": _parse_pdf}
 
 
 def build_index(
@@ -48,7 +49,7 @@ def build_index(
     author: str | None = None,
     embedder: Embedder | None = None,
 ) -> Path:
-    """Transform a book (EPUB/TXT) into an index file beside it.
+    """Transform a book (EPUB/TXT/PDF) into an index file beside it.
 
     Rebuilding is idempotent: any existing ``<stem>.rag`` is replaced.
     Raises BookError for unsupported formats or books with no extractable
@@ -61,7 +62,7 @@ def build_index(
 
     parser = _PARSERS.get(source.suffix.lower())
     if parser is None:
-        raise BookError(f"unsupported format {source.suffix!r} — v1 supports .epub and .txt")
+        raise BookError(f"unsupported format {source.suffix!r} — supported: .epub, .txt, .pdf")
 
     meta, sections = parser(source)
     if sum(len(s.text) for s in sections) < MIN_TEXT_CHARS:
@@ -158,7 +159,10 @@ def _fuse(
 
 
 def _fetch_result(conn, rank: int, chunk_id: int, score: float) -> Result | None:
-    row = conn.execute("SELECT path, text FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
+    row = conn.execute(
+        "SELECT path, text, page FROM chunks WHERE id = ?", (chunk_id,)
+    ).fetchone()
     if row is None:  # cannot happen for ids we just ranked; defensive only
         return None
-    return Result(rank=rank, score=score, path=row[0], text=row[1])
+    path, text, page = row
+    return Result(rank=rank, score=score, path=path, text=text, page=page)

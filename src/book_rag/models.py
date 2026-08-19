@@ -19,10 +19,13 @@ class Section:
 
     ``path`` is the structural path (e.g. "Part II › Chapter 3");
     ``None`` means the section has no structure (flat text).
+    ``page`` is the 1-based page number when the source format has pages
+    (PDF); ``None`` for formats without a page concept (EPUB/TXT).
     """
 
     path: str | None
     text: str
+    page: int | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +34,7 @@ class Chunk:
 
     path: str | None
     text: str
+    page: int | None = None
 
 
 @dataclass(frozen=True)
@@ -41,6 +45,7 @@ class Result:
     score: float
     path: str | None
     text: str
+    page: int | None = None
 
 
 @dataclass(frozen=True)

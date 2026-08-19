@@ -109,9 +109,74 @@ def test_epub_odf_container_namespace(tmp_path, epub_factory, fake_embedder):
 
 
 def test_unsupported_format_raises(tmp_path, fake_embedder):
-    pdf = tmp_path / "book.pdf"
-    pdf.write_bytes(b"%PDF-1.4 fake")
+    docx = tmp_path / "book.docx"
+    docx.write_bytes(b"PK fake docx")
     with pytest.raises(BookError, match="unsupported format"):
+        build_index(docx, embedder=fake_embedder)
+
+
+def test_pdf_build_creates_rag_beside_source(tmp_path, pdf_factory, fake_embedder):
+    pdf = pdf_factory(
+        tmp_path / "book.pdf",
+        [
+            "The zebra quokka alpaca gather in the meadow to discuss alpha topics "
+            "at considerable length and with great enthusiasm."
+        ],
+    )
+    idx = build_index(pdf, embedder=fake_embedder)
+    assert idx == pdf.with_suffix(".rag")
+    assert idx.is_file()
+
+
+def test_pdf_metadata_falls_back_to_stem(tmp_path, pdf_factory, fake_embedder):
+    pdf = pdf_factory(
+        tmp_path / "mybook.pdf",
+        [
+            "The zebra quokka alpaca gather in the meadow to discuss alpha topics "
+            "at considerable length and with great enthusiasm."
+        ],
+    )
+    idx = build_index(pdf, embedder=fake_embedder)
+    assert query(idx, "zebra", embedder=fake_embedder).book == "mybook"
+
+
+def test_pdf_page_provenance_retrievable(tmp_path, pdf_factory, fake_embedder):
+    pdf = pdf_factory(
+        tmp_path / "book.pdf",
+        [
+            "The emerald canopy of the forest shelters one-unique creatures "
+            "at considerable length and with great enthusiasm.",
+            "The crimson desert of the wasteland hosts two-unique wanderers "
+            "at considerable length and with great enthusiasm.",
+        ],
+    )
+    idx = build_index(pdf, embedder=fake_embedder)
+    out = query(idx, "emerald canopy forest", embedder=fake_embedder)
+    top = out.results[0]
+    assert top.path == "Page 1"
+    assert top.page == 1
+
+
+def test_pdf_second_page_retrievable(tmp_path, pdf_factory, fake_embedder):
+    pdf = pdf_factory(
+        tmp_path / "book.pdf",
+        [
+            "The emerald canopy of the forest shelters one-unique creatures "
+            "at considerable length and with great enthusiasm.",
+            "The crimson desert of the wasteland hosts two-unique wanderers "
+            "at considerable length and with great enthusiasm.",
+        ],
+    )
+    idx = build_index(pdf, embedder=fake_embedder)
+    out = query(idx, "crimson desert wasteland", embedder=fake_embedder)
+    top = out.results[0]
+    assert top.page == 2
+
+
+def test_image_only_pdf_raises(tmp_path, pdf_factory, fake_embedder):
+    # a PDF whose only page has no text content
+    pdf = pdf_factory(tmp_path / "book.pdf", ["   "])
+    with pytest.raises(BookError, match="no extractable text"):
         build_index(pdf, embedder=fake_embedder)
 
 

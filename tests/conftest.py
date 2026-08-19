@@ -136,3 +136,72 @@ def make_epub(
 def epub_factory():
     """Factory for synthetic EPUBs (spec-correct container namespace by default)."""
     return make_epub
+
+
+def make_pdf(path: Path, pages: list[str]) -> Path:
+    """Build a minimal valid multi-page PDF with one text line per page.
+
+    No external writer dependency: the PDF is hand-crafted bytes. Each page
+    draws its text with a single ``Tj`` operator in Helvetica — enough for
+    pypdfium2 to extract reading-order text. No metadata is set, so the
+    parser falls back to the filename stem (mirrors ``txt.py``).
+    """
+    font_num = 3
+    next_num = 4
+    page_nums: list[int] = []
+    objects: dict[int, bytes] = {}
+
+    for text in pages:
+        page_num = next_num
+        next_num += 1
+        content_num = next_num
+        next_num += 1
+        page_nums.append(page_num)
+
+        escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        content = f"BT /F1 12 Tf 72 700 Td ({escaped}) Tj ET"
+        content_bytes = content.encode("latin-1")
+        objects[content_num] = (
+            f"{content_num} 0 obj\n<< /Length {len(content_bytes)} >>\nstream\n".encode("latin-1")
+            + content_bytes
+            + b"\nendstream\nendobj\n"
+        )
+        objects[page_num] = (
+            f"{page_num} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Contents {content_num} 0 R "
+            f"/Resources << /Font << /F1 {font_num} 0 R >> >> >>\nendobj\n"
+        ).encode("latin-1")
+
+    objects[font_num] = (
+        f"{font_num} 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+    ).encode("latin-1")
+    kids = " ".join(f"{n} 0 R" for n in page_nums)
+    objects[1] = b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+    objects[2] = (
+        f"2 0 obj\n<< /Type /Pages /Kids [{kids}] /Count {len(page_nums)} >>\nendobj\n"
+    ).encode("latin-1")
+
+    header = b"%PDF-1.4\n"
+    body = b"".join(objects[n] for n in sorted(objects))
+    offsets: dict[int, int] = {}
+    pos = len(header)
+    for n in sorted(objects):
+        offsets[n] = pos
+        pos += len(objects[n])
+
+    n_objs = max(objects) + 1
+    xref = f"xref\n0 {n_objs}\n0000000000 65535 f \n"
+    for n in range(1, n_objs):
+        xref += f"{offsets[n]:010d} 00000 n \n"
+    trailer = (
+        f"trailer\n<< /Size {n_objs} /Root 1 0 R >>\n"
+        f"startxref\n{len(header) + len(body)}\n%%EOF\n"
+    )
+    path.write_bytes(header + body + xref.encode("latin-1") + trailer.encode("latin-1"))
+    return path
+
+
+@pytest.fixture
+def pdf_factory():
+    """Factory for synthetic PDFs (one text line per page, no metadata)."""
+    return make_pdf
