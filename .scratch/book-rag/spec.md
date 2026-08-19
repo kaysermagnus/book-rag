@@ -48,7 +48,7 @@ Everything runs locally: books never leave the machine, no API keys, no servers.
 
 - **Toolchain**: Python 3.12 managed by `uv`; a single package exposing the `book-rag` console script; runtime deps: `ebooklib`, `sqlite-vec`, `charset-normalizer`; dev deps: `pytest`, `ruff`.
 - **Architecture**: a thin CLI over two public entry points — `build_index(source_path) -> Index` and `query(index_path, question, top_k=5) -> results`. The pipeline inside is: parse → normalize (verbatim) → extract structure → chunk → embed → store. The CLI adds argument parsing, output formatting (JSON/`--text`), and progress on stderr; nothing else.
-- **Format support**: EPUB via `ebooklib` (structure from the EPUB3 nav, falling back to the EPUB2 NCX TOC) and TXT (Markdown `#`/`##` lines as section boundaries; otherwise flat). PDFs are explicitly unsupported in v1 and rejected with a clear error — the pipeline is format-agnostic, so PDF support is a later extension, not a rework.
+- **Format support**: EPUB via `ebooklib` (structure from the EPUB3 nav, falling back to the EPUB2 NCX TOC), TXT (Markdown `#`/`##` lines as section boundaries; otherwise flat), and PDF via `pypdfium2` (one section per page; `path` is `"Page N"`, `page` carries the 1-based page number). PDF outline / bookmark titles are a later refinement. Scanned / image-only PDFs yield no text and are rejected by the `MIN_TEXT_CHARS` guard; OCR is out of scope.
 - **Normalization (verbatim)**: line-break hyphens rejoined, soft hyphens dropped, ligatures expanded, whitespace collapsed; words and punctuation otherwise untouched.
 - **Chunking**: structure-first — a chunk is bounded by document structure and capped at 1024 tokens, sub-split at paragraph boundaries with ~128-token overlap; every chunk carries its structural path.
 - **Embedding**: `nomic-embed-text` via the Ollama HTTP API, behind a small embedder interface so the model is swappable (e.g. `bge-m3` for non-English shelves) without touching the pipeline. Availability is checked up front; a missing model prints the exact pull command and exits.
@@ -74,7 +74,7 @@ Everything runs locally: books never leave the machine, no API keys, no servers.
   }
   ```
 
-  No `page` field in v1 (EPUB/TXT have no page concept); it appears when PDF support lands.
+  No `page` field for EPUB/TXT sources (no page concept); PDF sources populate it with the 1-based page number.
 - **Metadata**: EPUB OPF title/author when present and sane, else the filename stem, overridable via `--title`/`--author`.
 - **TXT encoding**: UTF-8 strict first, `charset-normalizer` detection as fallback.
 
@@ -88,7 +88,8 @@ Everything runs locally: books never leave the machine, no API keys, no servers.
 
 ## Out of Scope
 
-- **PDF support** — including scanned PDFs and OCR. Later addition; the format-agnostic pipeline means it slots in as a new parser, not a rework.
+- **Scanned PDF OCR** — text-layer PDFs are supported; image-only PDFs are rejected with the same "no extractable text" error as image-only EPUBs. OCR is a later addition.
+- **PDF outline / bookmark structure** — PDFs currently use page numbers as provenance (`"Page N"`); mapping the PDF outline to chapter paths is a later refinement.
 - **Generation** — no answer synthesis in the tool (ADR-0001). A future `ask` subcommand would be a new surface, not a change to this contract.
 - **Multi-book shared index / cross-book search** — the schema carries book identity, so merging is a later query-layer feature.
 - **Reranking models** — hybrid + RRF only in v1.

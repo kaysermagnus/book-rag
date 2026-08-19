@@ -61,11 +61,11 @@ def _chunk_section(section: Section) -> list[Chunk]:
     window: list[str] = []
     for unit in units:
         if window and _tokens("\n\n".join(window + [unit])) > MAX_TOKENS:
-            chunks.append(Chunk(path=section.path, text="\n\n".join(window)))
+            chunks.append(Chunk(path=section.path, text="\n\n".join(window), page=section.page))
             window = _overlap_tail("\n\n".join(window))
         window.append(unit)
     if window:
-        chunks.append(Chunk(path=section.path, text="\n\n".join(window)))
+        chunks.append(Chunk(path=section.path, text="\n\n".join(window), page=section.page))
     return chunks
 
 

@@ -24,7 +24,8 @@ def _render_text(output) -> str:
     lines = [f"{output.book}  (mode: {output.mode})", ""]
     for r in output.results:
         where = f"  [{r.path}]" if r.path else ""
-        lines.append(f"{r.rank}. (score {r.score:.3f}){where}")
+        page = f"  p.{r.page}" if r.page is not None else ""
+        lines.append(f"{r.rank}. (score {r.score:.3f}){where}{page}")
         lines.append(f"   {r.text[:400]}")
         lines.append("")
     return "\n".join(lines).rstrip()
@@ -38,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_index = sub.add_parser("index", help="transform a book into an index beside it")
-    p_index.add_argument("file", help="path to the .epub or .txt book")
+    p_index.add_argument("file", help="path to the .epub, .txt, or .pdf book")
     p_index.add_argument("--title", help="override the book title")
     p_index.add_argument("--author", help="override the author")
 
@@ -66,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
                             "rank": r.rank,
                             "score": round(r.score, 4),
                             "path": r.path,
+                            "page": r.page,
                             "text": r.text,
                         }
                         for r in output.results

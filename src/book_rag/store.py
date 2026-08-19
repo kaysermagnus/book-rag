@@ -20,17 +20,47 @@ import sqlite_vec
 
 from .models import CorruptIndexError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
-def open_index(path: str | Path) -> sqlite3.Connection:
-    """Open an existing index file with the vec extension loaded."""
+def _connect(path: str | Path) -> sqlite3.Connection:
+    """Open a SQLite connection with the vec extension loaded."""
     conn = sqlite3.connect(str(path))
     conn.enable_load_extension(True)
     try:
         sqlite_vec.load(conn)
     finally:
         conn.enable_load_extension(False)
+    return conn
+
+
+def open_index(path: str | Path) -> sqlite3.Connection:
+    """Open an existing index file with the vec extension loaded.
+
+    Raises CorruptIndexError if the index is missing or was written by an
+    incompatible schema version (e.g. a v1 index after the page-column
+    migration). The recovery path is delete + reindex.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise CorruptIndexError(f"no such index: {path}")
+    conn = _connect(path)
+    try:
+        version_row = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()
+    except sqlite3.Error as e:
+        conn.close()
+        raise CorruptIndexError(f"unreadable index meta: {e}") from e
+    if version_row is None:
+        conn.close()
+        raise CorruptIndexError("missing schema_version — not a book-rag index")
+    if version_row[0] != str(SCHEMA_VERSION):
+        conn.close()
+        raise CorruptIndexError(
+            f"index schema {version_row[0]} is incompatible (expected {SCHEMA_VERSION}) — "
+            f"delete {path} and reindex"
+        )
     return conn
 
 
@@ -41,9 +71,11 @@ def create_index(path: str | Path, dim: int) -> sqlite3.Connection:
     path = Path(path)
     if path.exists():
         path.unlink()
-    conn = open_index(path)
+    conn = _connect(path)
     conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
-    conn.execute("CREATE TABLE chunks (id INTEGER PRIMARY KEY, path TEXT, text TEXT)")
+    conn.execute(
+        "CREATE TABLE chunks (id INTEGER PRIMARY KEY, path TEXT, text TEXT, page INTEGER)"
+    )
     conn.execute(
         "CREATE VIRTUAL TABLE chunks_fts USING fts5(text, content='chunks', content_rowid='id')"
     )
@@ -71,8 +103,8 @@ def write_index(
     conn.executemany("INSERT OR REPLACE INTO meta VALUES (?, ?)", list(meta.items()))
     for i, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True), start=1):
         conn.execute(
-            "INSERT INTO chunks (id, path, text) VALUES (?, ?, ?)",
-            (i, chunk.path, chunk.text),
+            "INSERT INTO chunks (id, path, text, page) VALUES (?, ?, ?, ?)",
+            (i, chunk.path, chunk.text, chunk.page),
         )
         conn.execute("INSERT INTO chunks_fts (rowid, text) VALUES (?, ?)", (i, chunk.text))
         conn.execute(
