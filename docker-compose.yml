@@ -6,19 +6,13 @@ services:
     volumes:
       # books + .rag indexes persist here (SQLite lives in the volume)
       - ./data:/data
+      # pulled Ollama models persist here so the nomic-embed-text pull happens once
+      - ollama-models:/ollama
+    # Ollama runs inside the same container; no host.docker.internal needed.
+    # Override OLLAMA_MODEL to use a different embedding model.
     environment:
-      OLLAMA_BASE_URL: http://host.docker.internal:11434 # host's Ollama
-    extra_hosts:
-      # needed on Linux; already defined on Docker Desktop
-      - "host.docker.internal:host-gateway"
+      OLLAMA_BASE_URL: http://127.0.0.1:11434
     restart: unless-stopped
 
-  # Alternative to the host's Ollama: run it as a sibling container on this
-  # network, then set OLLAMA_BASE_URL to http://ollama:11434 above.
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   volumes:
-  #     - ollama-data:/root/.ollama
-
-# volumes:
-#   ollama-data:
+volumes:
+  ollama-models:
