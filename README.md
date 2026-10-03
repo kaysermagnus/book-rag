@@ -94,7 +94,7 @@ Instead of having an agent shell out to `book-rag query` (parsing stdout, handli
 book-rag-mcp   # stdio server; wire it into your agent's MCP client config
 ```
 
-The server inherits the CLI's contracts: verbatim chunks with provenance, graceful degradation to keyword-only when Ollama is down (`mode: "keyword-fallback"`), and the citation obligation (the agent answers only from retrieved chunks). Index building is deliberately not exposed — see ADR-0002.
+The server inherits the CLI's contracts: verbatim chunks with provenance, graceful degradation to keyword-only when Ollama is down (`mode: "keyword-fallback"`), the optional laya rerank (`rerank` metadata + per-result `relevance` when `LAYA_URL` is set), and the citation obligation (the agent answers only from retrieved chunks). Index building is deliberately not exposed — see ADR-0002.
 
 ### Phase 5: Running in Docker
 
@@ -151,7 +151,8 @@ This section details the architectural choices made to meet specific constraints
 
 * **Hybrid Search:** The system employs a dual-path retrieval mechanism: high-dimensional vector search (KNN) and full-text indexing (FTS5/BM25).
 * **Fusion:** Results from both paths are combined using **Reciprocal Rank Fusion ($\text{RRF}_{K=60}$)**, and the top 5 candidates are passed to the agent.
-* **Degradation:** If the embedding service (Ollama) is unavailable, the system gracefully degrades to keyword-only retrieval using FTS5.
+* **Optional rerank:** When `LAYA_URL` is set, fused candidates are scored and gated by a [laya](https://github.com/NandhaKishorM/laya) decision model (`laya-serve`) — survivors return in relevance order with a `relevance` value; if too few pass, the pool widens (up to 3 rounds) and the outcome is reported in the output's `rerank` metadata. Unset `LAYA_URL` → behavior is exactly the un-reranked pipeline. See ADR-0004.
+* **Degradation:** If the embedding service (Ollama) is unavailable, the system gracefully degrades to keyword-only retrieval using FTS5. If the rerank service is unreachable, results come back un-reranked with `rerank.status: "unavailable"` — the query never fails for it.
 
 ### Protocols
 

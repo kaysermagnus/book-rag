@@ -12,6 +12,26 @@ services:
     # Override OLLAMA_MODEL to use a different embedding model.
     environment:
       OLLAMA_BASE_URL: http://127.0.0.1:11434
+      # Optional laya rerank in query() — unset disables it entirely.
+      LAYA_URL: http://laya-serve:8090
+    restart: unless-stopped
+    depends_on:
+      - laya-serve
+
+  # Decision model backing the optional rerank pass (score+gate in query).
+  # Internal to this network — no published port needed.
+  laya-serve:
+    build: ../laya-mcp   # sibling repo; or `image: laya-mcp:latest` once built
+    restart: unless-stopped
+
+  # Agent-facing decision tools (rerank / route_model / decide), same image.
+  laya-mcp:
+    image: laya-mcp:latest
+    command: ["laya-mcp", "--transport", "http", "--host", "0.0.0.0", "--port", "8091"]
+    ports:
+      - "8091:8091"   # streamable-http MCP endpoint -> http://localhost:8091/mcp
+    depends_on:
+      - laya-serve
     restart: unless-stopped
 
 volumes:

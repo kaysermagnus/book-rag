@@ -42,10 +42,11 @@ class Result:
     """A retrieved chunk with its rank and fused score."""
 
     rank: int
-    score: float
+    score: float  # retrieval fusion score (RRF)
     path: str | None
     text: str
     page: int | None = None
+    relevance: float | None = None  # decision-model judgment, when rerank ran
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ class QueryOutput:
     book: str
     mode: str  # "hybrid" | "keyword-fallback"
     results: list[Result]
+    rerank: dict | None = None  # {"status", "rounds_used", "candidates_evaluated", "passed"}
 
 
 class BookError(Exception):

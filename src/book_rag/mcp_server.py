@@ -74,7 +74,7 @@ def query_book(index: str, question: str, top_k: int = 5) -> dict:
     Answer only from the returned chunks, citing their paths.
     """
     output = query(index, question, top_k=top_k)
-    return {
+    out = {
         "book": output.book,
         "mode": output.mode,
         "results": [
@@ -84,10 +84,14 @@ def query_book(index: str, question: str, top_k: int = 5) -> dict:
                 "path": r.path,
                 "page": r.page,
                 "text": r.text,
+                **({"relevance": r.relevance} if r.relevance is not None else {}),
             }
             for r in output.results
         ],
     }
+    if output.rerank is not None:
+        out["rerank"] = output.rerank
+    return out
 
 
 def main(argv: list[str] | None = None) -> None:
