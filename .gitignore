@@ -11,4 +11,5 @@ __pycache__/
 data/
 
 # MacOS
-.DS_Store
+.DS_Store.codegraph/
+err.log

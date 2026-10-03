@@ -27,3 +27,7 @@ _Avoid_: "byte-identical", "raw extraction"
 **RAG**:
 The general technique (retrieval-augmented generation). Not a thing this repo produces — the repo produces indexes.
 _Avoid_: "a rag" as a noun for the artifact
+
+**Rerank**:
+An optional decision-model pass inside `query`: candidates are scored for relevance and kept or dropped by an absolute gate, with the pool widening until enough survive. Reorders and removes chunks — never alters text. Active only when configured (`LAYA_URL`); reported via the query output's `rerank` metadata.
+_Avoid_: filter (a gate drops; a rerank also orders), re-rank (hyphenated)

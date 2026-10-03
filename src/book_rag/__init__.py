@@ -19,6 +19,9 @@ from .embed import Embedder, EmbedderError, OllamaEmbedder
 from .epub import parse as _parse_epub
 from .models import BookError, CorruptIndexError, QueryOutput, Result
 from .pdf import parse as _parse_pdf
+from .rerank import Reranker
+from .rerank import from_env as _env_reranker
+from .rerank import kept as _kept
 from .retrieve import fuse
 from .store import create_index, open_index, read_meta, search_keyword, search_vector, write_index
 from .txt import parse as _parse_txt
@@ -100,12 +103,18 @@ def query(
     *,
     top_k: int = 5,
     embedder: Embedder | None = None,
+    reranker: Reranker | None = None,
 ) -> QueryOutput:
     """Retrieve the best-matching verbatim chunks for a question.
 
     Hybrid by default (vector KNN + BM25, fused with RRF). If the embedder
     is unavailable at query time, degrades to keyword-only and says so via
     ``mode: "keyword-fallback"``.
+
+    When a reranker is injected or LAYA_URL is set, candidates are scored
+    and gated by the decision model — the pool widens until ``top_k``
+    survivors pass or the round budget is exhausted, reported via
+    ``QueryOutput.rerank``.
     """
     index = Path(index)
     if not index.is_file():
@@ -116,28 +125,112 @@ def query(
         meta = read_meta(conn)
         if embedder is None:
             embedder = OllamaEmbedder()
+        if reranker is None:
+            reranker = _env_reranker()
 
         mode = "hybrid"
-        vector_hits: list[tuple[int, float]] = []
+        question_vector: list[float] | None = None
         try:
             [question_vector] = embedder.embed([question])
-            vector_hits = search_vector(conn, question_vector, top_k * 2)
         except EmbedderError:
             mode = "keyword-fallback"
 
-        keyword_hits = search_keyword(conn, question, top_k * 2)
-        ranked = _fuse(vector_hits, keyword_hits, top_k)
+        def vector_hits(k: int) -> list[tuple[int, float]]:
+            return search_vector(conn, question_vector, k) if question_vector else []
+
+        if reranker is None:
+            ranked = _fuse(vector_hits(top_k * 2), search_keyword(conn, question, top_k * 2), top_k)
+            results = [
+                _fetch_result(conn, rank, chunk_id, score)
+                for rank, (chunk_id, score) in enumerate(ranked, start=1)
+            ]
+            return QueryOutput(
+                book=meta.get("title") or index.stem,
+                mode=mode,
+                results=[r for r in results if r is not None],
+            )
+
+        results, rerank_meta = _reranked(conn, question, top_k, vector_hits, reranker)
+        return QueryOutput(
+            book=meta.get("title") or index.stem,
+            mode=mode,
+            results=results,
+            rerank=rerank_meta,
+        )
+    finally:
+        conn.close()
+
+
+_RERANK_ROUNDS = 3
+
+
+def _reranked(conn, question, top_k, vector_hits, reranker) -> tuple[list[Result], dict]:
+    """Score-and-gate pass with a widening candidate pool.
+
+    Each round doubles the fused pool; candidates are evaluated once (by
+    chunk id). Stops when top_k survivors pass or the budget is spent.
+    Reranker failure degrades to un-reranked output, never a failed query.
+    """
+    decisions: dict[int, tuple[float, float]] = {}
+    pool_k = top_k * 2
+    _rounds = 0
+    survivors: list[int] = []
+    fused_scores: dict[int, float] = {}
+
+    def unranked():
+        ranked = _fuse(vector_hits(top_k * 2), search_keyword(conn, question, top_k * 2), top_k)
         results = [
             _fetch_result(conn, rank, chunk_id, score)
             for rank, (chunk_id, score) in enumerate(ranked, start=1)
         ]
-        return QueryOutput(
-            book=meta.get("title") or index.stem,
-            mode=mode,
-            results=[r for r in results if r is not None],
-        )
-    finally:
-        conn.close()
+        return [r for r in results if r is not None]
+
+    try:
+        for _rounds in range(1, _RERANK_ROUNDS + 1):
+            ranked = _fuse(
+                vector_hits(pool_k), search_keyword(conn, question, pool_k), pool_k
+            )
+            fused_scores.update(ranked)
+            unseen = [cid for cid, _ in ranked if cid not in decisions]
+            if unseen:
+                texts = [_chunk_text(conn, cid) for cid in unseen]
+                for cid, verdict in zip(unseen, reranker.evaluate(question, texts), strict=True):
+                    decisions[cid] = verdict
+            survivors = [
+                cid for cid, _ in ranked if cid in decisions and _kept(*decisions[cid])
+            ]
+            survivors.sort(key=lambda cid: -decisions[cid][0])
+            if len(survivors) >= top_k:
+                break
+            pool_k *= 2
+    except Exception:
+        return unranked(), {"status": "unavailable"}
+
+    results = []
+    for rank, cid in enumerate(survivors[:top_k], start=1):
+        r = _fetch_result(conn, rank, cid, fused_scores[cid])
+        if r is not None:
+            results.append(
+                Result(
+                    rank=r.rank,
+                    score=r.score,
+                    path=r.path,
+                    text=r.text,
+                    page=r.page,
+                    relevance=decisions[cid][0],
+                )
+            )
+    return results, {
+        "status": "ok",
+        "rounds_used": _rounds,
+        "candidates_evaluated": len(decisions),
+        "passed": len(survivors),
+    }
+
+
+def _chunk_text(conn, chunk_id: int) -> str:
+    row = conn.execute("SELECT text FROM chunks WHERE id = ?", (chunk_id,)).fetchone()
+    return row[0] if row else ""
 
 
 def _embed_with_progress(embedder: Embedder, texts: list[str]) -> list[list[float]]:

@@ -59,6 +59,21 @@ def test_query_book_returns_verbatim_results_with_provenance(tmp_path, fake_embe
     assert isinstance(top["score"], float) and top["score"] > 0
 
 
+def test_query_book_exposes_rerank_metadata(tmp_path, fake_embedder, monkeypatch):
+    """Agents see the rerank outcome and per-result relevance when it ran."""
+    idx = _build(tmp_path, fake_embedder)
+    monkeypatch.setattr("book_rag.OllamaEmbedder", lambda: fake_embedder)
+
+    class _Pass:
+        def evaluate(self, question, texts):
+            return [(4.0, 0.9)] * len(texts)
+
+    monkeypatch.setattr("book_rag._env_reranker", lambda: _Pass())
+    out = query_book(str(idx), "zebra quokka alpaca meadow")
+    assert out["rerank"]["status"] == "ok"
+    assert out["results"][0]["relevance"] == 4.0
+
+
 def test_query_book_degrades_to_keyword_fallback(
     tmp_path, fake_embedder, dead_embedder, monkeypatch
 ):
